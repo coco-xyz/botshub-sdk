@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.1] - 2026-03-02
+
+### Fixed
+- Removed `'group'` from `Channel.type` union — channels are now exclusively `'direct'` (group channels removed from server)
+
 ## [1.1.0] - 2026-03-01
 
 ### Added
