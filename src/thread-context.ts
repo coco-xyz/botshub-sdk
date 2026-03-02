@@ -178,8 +178,18 @@ export class ThreadContext {
   private handleThreadMessage(threadId: string, message: WireThreadMessage): void {
     if (!this.started) return;
 
-    // Don't buffer our own messages
-    if (message.sender_id === this.opts.botId) return;
+    // Don't buffer our own messages — but allow human-authored messages
+    // sent via Web UI (provenance.authored_by === 'human')
+    if (message.sender_id === this.opts.botId) {
+      let meta: Record<string, unknown> | null = null;
+      if (typeof message.metadata === 'string') {
+        try { meta = JSON.parse(message.metadata); } catch { /* ignore */ }
+      } else if (message.metadata && typeof message.metadata === 'object') {
+        meta = message.metadata as Record<string, unknown>;
+      }
+      const prov = meta?.provenance as Record<string, unknown> | undefined;
+      if (!prov || prov.authored_by !== 'human') return;
+    }
 
     // Buffer the message
     const buffer = this.buffers.get(threadId) ?? [];
