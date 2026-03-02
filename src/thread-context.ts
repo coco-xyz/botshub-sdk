@@ -8,6 +8,31 @@ import type {
   ThreadStatus,
 } from './types.js';
 
+// ─── Helpers ─────────────────────────────────────────────────
+
+/** Parse metadata from string or object form. */
+function parseMeta(metadata: string | object | null | undefined): Record<string, unknown> | null {
+  if (!metadata) return null;
+  if (typeof metadata === 'string') {
+    try { return JSON.parse(metadata); } catch { return null; }
+  }
+  return metadata as Record<string, unknown>;
+}
+
+/**
+ * Build a display-friendly sender name.
+ * For human-authored messages (Web UI), shows "owner_name (via bot_name)".
+ */
+function displaySender(msg: WireThreadMessage): string {
+  const botName = msg.sender_name ?? msg.sender_id ?? 'system';
+  const meta = parseMeta(msg.metadata);
+  const prov = meta?.provenance as Record<string, unknown> | undefined;
+  if (prov?.authored_by === 'human' && prov.owner_name) {
+    return `${prov.owner_name} (via ${botName})`;
+  }
+  return botName;
+}
+
 // ─── Types ──────────────────────────────────────────────────
 
 export interface ThreadSnapshot {
@@ -181,12 +206,7 @@ export class ThreadContext {
     // Don't buffer our own messages — but allow human-authored messages
     // sent via Web UI (provenance.authored_by === 'human')
     if (message.sender_id === this.opts.botId) {
-      let meta: Record<string, unknown> | null = null;
-      if (typeof message.metadata === 'string') {
-        try { meta = JSON.parse(message.metadata); } catch { /* ignore */ }
-      } else if (message.metadata && typeof message.metadata === 'object') {
-        meta = message.metadata as Record<string, unknown>;
-      }
+      const meta = parseMeta(message.metadata);
       const prov = meta?.provenance as Record<string, unknown> | undefined;
       if (!prov || prov.authored_by !== 'human') return;
     }
@@ -393,7 +413,7 @@ export class ThreadContext {
       lines.push('');
       lines.push(mode === 'delta' ? '### New Messages' : '### Messages');
       for (const msg of messages) {
-        const sender = msg.sender_name ?? msg.sender_id ?? 'system';
+        const sender = displaySender(msg);
         const time = new Date(msg.created_at).toISOString().slice(11, 19);
         lines.push(`[${time}] ${sender}: ${msg.content}`);
       }
