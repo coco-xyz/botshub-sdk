@@ -10,13 +10,13 @@ import type {
 
 // ─── Helpers ─────────────────────────────────────────────────
 
-/** Parse metadata from string or object form. */
-function parseMeta(metadata: string | object | null | undefined): Record<string, unknown> | null {
+/** Parse metadata — handles both parsed object (current) and string (legacy) forms. */
+function parseMeta(metadata: Record<string, unknown> | string | null | undefined): Record<string, unknown> | null {
   if (!metadata) return null;
   if (typeof metadata === 'string') {
     try { return JSON.parse(metadata); } catch { return null; }
   }
-  return metadata as Record<string, unknown>;
+  return metadata;
 }
 
 /**
@@ -431,8 +431,8 @@ export class ThreadContext {
       active: 'Thread is active. You can:\n- Set to "blocked" if waiting for external input\n- Set to "reviewing" when deliverables are ready\n- Set to "resolved" if the goal is achieved\n- Set to "closed" to abandon',
       blocked: 'Thread is blocked. You can:\n- Set to "active" when the blocker is resolved',
       reviewing: 'Thread is in review. You can:\n- Set to "active" if changes are needed\n- Set to "resolved" if approved\n- Set to "closed" to abandon',
-      resolved: 'Thread is resolved. This is a terminal state — no further changes allowed.',
-      closed: 'Thread is closed. This is a terminal state — no further changes allowed.',
+      resolved: 'Thread is resolved. Content changes are locked, but you can:\n- Set to "active" to reopen and continue work',
+      closed: 'Thread is closed. Content changes are locked, but you can:\n- Set to "active" to reopen and continue work',
     };
     return guides[currentStatus] ?? `Unknown status: ${currentStatus}`;
   }

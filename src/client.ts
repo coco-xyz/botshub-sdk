@@ -15,6 +15,7 @@ import type {
   OrgTicket,
   RegisterResponse,
   ScopedToken,
+  SessionInfo,
   Thread,
   ThreadParticipant,
   ThreadPermissionPolicy,
@@ -250,8 +251,17 @@ export class HxaConnectClient {
 
     this.ws.addEventListener('close', (event: any) => {
       const code: number | undefined = event?.code;
+      const reason: string | undefined = event?.reason;
       this.ws = null;
-      this.emit('close', undefined);
+      this.emit('close', { code, reason });
+
+      // 4002 = Session invalidated (expired, revoked, credential rotated, etc.)
+      // Do NOT reconnect — session is gone, reconnect will fail.
+      if (code === 4002) {
+        this.emit('session_invalidated', { code, reason });
+        return;
+      }
+
       // 1012 = Service Restart: reconnect immediately (no backoff)
       this.scheduleReconnect(code === 1012);
     });
@@ -337,9 +347,11 @@ export class HxaConnectClient {
    * - `thread_artifact` — Artifact added or updated
    * - `thread_participant` — Bot joined or left a thread
    * - `bot_renamed` — Bot display name changed
-   * - `error` — Error event
+   * - `ack` — Acknowledgement for a WS request (includes ref)
+   * - `error` — Error event (may include ref for correlation)
    * - `pong` — Pong response to ping
-   * - `close` — WebSocket disconnected
+   * - `close` — WebSocket disconnected (includes code and reason)
+   * - `session_invalidated` — Session expired/revoked/rotated (code 4002, no auto-reconnect)
    * - `reconnecting` / `reconnected` / `reconnect_failed` — Reconnect lifecycle
    * - `*` — Wildcard: receives all events
    */
@@ -394,24 +406,28 @@ export class HxaConnectClient {
   // ─── Static Auth Methods ─────────────────────────────────
 
   /**
-   * Login to an HXA-Connect org and get a ticket for bot registration.
-   * This is typically used by humans or automation to onboard new bots.
+   * Login to an HXA-Connect server and create a session.
+   *
+   * Supports three login types:
+   * - `bot`: Authenticate as a bot owner using a bot token
+   * - `org_admin`: Authenticate as an org administrator using org credentials
+   * - `super_admin`: Authenticate as the super administrator
+   *
+   * Returns session info. The server also sets an HttpOnly session cookie.
    */
   static async login(
     url: string,
-    orgId: string,
-    orgSecret: string,
-    opts?: { reusable?: boolean; expires_in?: number },
+    credentials:
+      | { type: 'bot'; token: string; owner_name?: string }
+      | { type: 'org_admin'; org_id: string; org_secret: string }
+      | { type: 'super_admin'; admin_secret: string },
   ): Promise<LoginResponse> {
     const baseUrl = url.replace(/\/+$/, '');
-    const body: Record<string, unknown> = { org_id: orgId, org_secret: orgSecret };
-    if (opts?.reusable !== undefined) body.reusable = opts.reusable;
-    if (opts?.expires_in !== undefined) body.expires_in = opts.expires_in;
 
     const response = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(credentials),
     });
 
     if (!response.ok) {
@@ -424,13 +440,59 @@ export class HxaConnectClient {
   }
 
   /**
-   * Register a new bot in an HXA-Connect org using a ticket.
-   * Returns bot info and token. Use the token to create an HxaConnectClient.
+   * Logout from an HXA-Connect server session.
+   * Deletes the session and clears the session cookie.
+   */
+  static async logout(url: string): Promise<{ ok: boolean }> {
+    const baseUrl = url.replace(/\/+$/, '');
+
+    const response = await fetch(`${baseUrl}/api/auth/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      let respBody: unknown;
+      try { respBody = await response.json(); } catch { respBody = await response.text().catch(() => null); }
+      throw new ApiError(response.status, respBody);
+    }
+
+    return response.json() as Promise<{ ok: boolean }>;
+  }
+
+  /**
+   * Get the current session info from an HXA-Connect server.
+   * Requires an active session cookie.
+   */
+  static async getSession(url: string): Promise<SessionInfo> {
+    const baseUrl = url.replace(/\/+$/, '');
+
+    const response = await fetch(`${baseUrl}/api/auth/session`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      let respBody: unknown;
+      try { respBody = await response.json(); } catch { respBody = await response.text().catch(() => null); }
+      throw new ApiError(response.status, respBody);
+    }
+
+    return response.json() as Promise<SessionInfo>;
+  }
+
+  /**
+   * Register a new bot in an HXA-Connect org.
+   * Supports two registration paths:
+   * - **Ticket**: Use a registration ticket (member role)
+   * - **Org secret**: Use the org secret directly (admin role)
+   *
+   * Returns bot info and a one-time token. Use the token to create an HxaConnectClient.
    */
   static async register(
     url: string,
     orgId: string,
-    ticket: string,
+    auth: { ticket: string } | { org_secret: string },
     name: string,
     opts?: {
       bio?: string;
@@ -438,7 +500,7 @@ export class HxaConnectClient {
     },
   ): Promise<RegisterResponse> {
     const baseUrl = url.replace(/\/+$/, '');
-    const body: Record<string, unknown> = { org_id: orgId, ticket, name, ...opts };
+    const body: Record<string, unknown> = { org_id: orgId, ...auth, name, ...opts };
 
     const response = await fetch(`${baseUrl}/api/auth/register`, {
       method: 'POST',

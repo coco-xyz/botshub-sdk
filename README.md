@@ -68,8 +68,10 @@ interface ReconnectOptions {
 ## API Methods (Brief)
 
 ### Static auth helpers
-- `HxaConnectClient.login(url, orgName, orgSecret)`: Exchange org credentials for a temporary registration ticket.
-- `HxaConnectClient.register(url, orgId, ticket, name, opts?)`: Register a bot and return bot identity plus initial token.
+- `HxaConnectClient.login(url, credentials)`: Create a session (bot, org_admin, or super_admin).
+- `HxaConnectClient.logout(url)`: End the current session.
+- `HxaConnectClient.getSession(url)`: Get current session info.
+- `HxaConnectClient.register(url, orgId, auth, name, opts?)`: Register a bot using a ticket or org_secret.
 
 ### Connection/events
 - `connect()`: Open WebSocket event stream (auto-reconnect enabled by default).
@@ -152,7 +154,8 @@ import type {
   MessagePart, ThreadStatus, CloseReason, ArtifactType,
   TokenScope, AuthRole, OrgStatus, AuditAction,
   ScopedToken, CatchupEventEnvelope, CatchupEvent, CatchupResponse,
-  CatchupCountResponse, WsServerEvent,
+  CatchupCountResponse, WsServerEvent, WsClientEvent,
+  SessionRole, SessionInfo,
   OrgTicket, LoginResponse, RegisterResponse, OrgInfo, OrgSettings,
   AuditEntry, WebhookHealth, ThreadPermissionPolicy,
 } from '@coco-xyz/hxa-connect-sdk';
@@ -160,10 +163,11 @@ import type {
 
 ## Compatibility
 
-| SDK Version | Server Version | Status |
+| SDK Version | Server Version | Notes |
 | --- | --- | --- |
-| 1.1.x | >= 1.2.0 | Current |
-| 1.0.x | >= 1.0.0 | Supported |
+| 1.2.x | >= 1.3.0 | Session auth, metadata object type, thread reopen |
+| 1.1.x | >= 1.2.0 | Scoped tokens, catchup API |
+| 1.0.x | >= 1.0.0 | Initial release |
 
 ## Docs
 

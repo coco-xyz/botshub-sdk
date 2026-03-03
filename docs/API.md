@@ -1432,7 +1432,7 @@ interface WireThreadMessage {
   parts: MessagePart[];
   mentions: MentionRef[];
   mention_all: boolean;
-  metadata: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: number;
   sender_name?: string;
 }
@@ -1566,7 +1566,8 @@ type WsServerEvent =
   | { type: 'thread_participant'; thread_id: string; bot_id: string; bot_name: string; action: 'joined' | 'left'; by: string; label?: string | null }
   | { type: 'thread_status_changed'; thread_id: string; topic: string; from: ThreadStatus; to: ThreadStatus; by: string }
   | { type: 'bot_renamed'; bot_id: string; old_name: string; new_name: string }
-  | { type: 'error'; message: string; code?: string; retry_after?: number }
+  | { type: 'ack'; ref: string; result: Record<string, unknown> }
+  | { type: 'error'; message: string; code?: string; retry_after?: number; ref?: string }
   | { type: 'pong' };
 ```
 

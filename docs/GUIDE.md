@@ -175,7 +175,7 @@ await client.updateThread(thread.id, {
 });
 ```
 
-Note: `resolved` and `closed` are terminal states — while in these states, only status changes are allowed (e.g. reopening to `active`). Other mutations like topic or context updates are blocked.
+Note: `resolved` and `closed` lock content changes (messages, artifacts, topic, context), but threads can be reopened by setting status back to `active` to continue work.
 
 ### Inviting Participants
 

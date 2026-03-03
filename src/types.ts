@@ -152,7 +152,7 @@ export interface WireThreadMessage {
   parts: MessagePart[];
   mentions: MentionRef[];
   mention_all: boolean;
-  metadata: string | null;
+  metadata: Record<string, unknown> | null;
   created_at: number;
   sender_name?: string;
 }
@@ -223,6 +223,21 @@ export interface CatchupCountResponse {
   total: number;
 }
 
+// ─── Session Auth ───────────────────────────────────────────
+
+export type SessionRole = 'bot_owner' | 'org_admin' | 'super_admin';
+
+/** Wire response from GET /api/auth/session. */
+export interface SessionInfo {
+  role: SessionRole;
+  org_id: string | null;
+  bot_id: string | null;
+  owner_name: string | null;
+  scopes: TokenScope[] | null;
+  is_scoped_token: boolean;
+  expires_at: number;
+}
+
 // ─── Org Auth ───────────────────────────────────────────────
 
 export interface OrgTicket {
@@ -232,10 +247,12 @@ export interface OrgTicket {
 }
 
 export interface LoginResponse {
-  ticket: string;
-  expires_at: number;
-  reusable: boolean;
-  org: { id: string; name: string };
+  session: {
+    role: SessionRole;
+    org_id?: string;
+    bot_id?: string;
+    expires_at: number;
+  };
 }
 
 /**
@@ -275,13 +292,14 @@ export interface OrgSettings {
 export type AuditAction =
   | 'bot.register' | 'bot.delete' | 'bot.profile_update' | 'bot.rename' | 'bot.role_change'
   | 'bot.token_create' | 'bot.token_revoke'
-  | 'thread.create' | 'thread.status_changed' | 'thread.join' | 'thread.invite' | 'thread.remove_participant'
+  | 'thread.create' | 'thread.status_changed' | 'thread.join' | 'thread.leave' | 'thread.invite' | 'thread.remove_participant'
   | 'thread.permission_denied'
   | 'message.send'
   | 'artifact.add' | 'artifact.update'
   | 'file.upload'
   | 'settings.update'
-  | 'lifecycle.cleanup';
+  | 'lifecycle.cleanup'
+  | 'auth.login' | 'auth.login_failed' | 'auth.logout' | 'auth.session_revoked';
 
 export interface AuditEntry {
   id: string;
@@ -318,5 +336,22 @@ export type WsServerEvent =
   | { type: 'thread_participant'; thread_id: string; bot_id: string; bot_name: string; action: 'joined' | 'left'; by: string; label?: string | null }
   | { type: 'thread_status_changed'; thread_id: string; topic: string; from: ThreadStatus; to: ThreadStatus; by: string }
   | { type: 'bot_renamed'; bot_id: string; old_name: string; new_name: string }
-  | { type: 'error'; message: string; code?: string; retry_after?: number }
+  | { type: 'ack'; ref: string; result: Record<string, unknown> }
+  | { type: 'error'; message: string; code?: string; retry_after?: number; ref?: string }
   | { type: 'pong' };
+
+export type WsClientEvent =
+  | { type: 'send'; channel_id: string; content?: string; content_type?: string; parts?: MessagePart[]; ref?: string }
+  | { type: 'send_dm'; to: string; content?: string; content_type?: string; parts?: MessagePart[]; ref?: string }
+  | { type: 'send_thread_message'; thread_id: string; content?: string; content_type?: string; parts?: MessagePart[]; metadata?: unknown; ref?: string }
+  | { type: 'thread_create'; topic: string; tags?: string[]; participants?: string[]; channel_id?: string; context?: unknown; ref?: string }
+  | { type: 'thread_update'; thread_id: string; status?: string; close_reason?: string; topic?: string; context?: unknown; expected_revision?: number; ref?: string }
+  | { type: 'thread_invite'; thread_id: string; bot_id: string; label?: string; ref?: string }
+  | { type: 'thread_join'; thread_id: string; ref?: string }
+  | { type: 'thread_leave'; thread_id: string; ref?: string }
+  | { type: 'thread_remove_participant'; thread_id: string; bot_id: string; ref?: string }
+  | { type: 'artifact_add'; thread_id: string; artifact_key: string; artifact_type?: string; title?: string | null; content?: string | null; language?: string | null; url?: string | null; mime_type?: string | null; ref?: string }
+  | { type: 'artifact_update'; thread_id: string; artifact_key: string; content: string; title?: string | null; ref?: string }
+  | { type: 'subscribe'; channel_id?: string; thread_id?: string }
+  | { type: 'unsubscribe'; channel_id?: string; thread_id?: string }
+  | { type: 'ping' };
