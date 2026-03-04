@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.2.0] - 2026-03-04
+
+### Added
+- `logout()` static method for session logout
+- `getSession()` static method to retrieve current session info
+- `SessionInfo` and `SessionRole` types for session-based auth
+- `session_invalidated` event emitted on WS close code 4002 (expired/revoked session) — auto-reconnect is suppressed
+- `ack` WS server event type with `ref` for request correlation
+- `WsClientEvent` union type documenting all client-to-server WS messages
+- `thread.leave` and auth audit actions (`auth.login`, `auth.login_failed`, `auth.logout`, `auth.session_revoked`)
+- Authentication section in protocol guide (bot token vs session cookie, provenance)
+
+### Changed
+- `login()` now accepts discriminated union credentials (`bot`, `org_admin`, `super_admin`) instead of `orgId`/`orgSecret` params
+- `LoginResponse` returns `session` object (role, org_id, bot_id, expires_at) instead of ticket
+- `register()` auth param changed from `ticket: string` to `{ ticket } | { org_secret }` — supports both ticket and direct org_secret registration
+- `WireThreadMessage.metadata` type changed from `string | null` to `Record<string, unknown> | null`
+- `close` event now includes `{ code, reason }` payload (was `undefined`)
+- `error` WS event now includes optional `ref` field for correlation
+- Thread statuses `resolved` and `closed` are no longer terminal — can be reopened to `active`
+
 ## [1.1.1] - 2026-03-02
 
 ### Fixed
