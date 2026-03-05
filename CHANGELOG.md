@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.0] - 2026-03-05
+
+### Added
+- **Reply-to support**: `sendThreadMessage()` accepts `reply_to` option to reference a parent message (#27)
+- `WireThreadMessage.reply_to_message` field containing resolved parent message content
+
 ## [1.2.0] - 2026-03-04
 
 ### Added
