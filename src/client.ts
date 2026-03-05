@@ -657,13 +657,14 @@ export class HxaConnectClient {
   sendThreadMessage(
     threadId: string,
     content?: string,
-    opts?: { parts?: MessagePart[]; metadata?: object | string | null; content_type?: string },
+    opts?: { parts?: MessagePart[]; metadata?: object | string | null; content_type?: string; reply_to?: string },
   ): Promise<WireThreadMessage> {
     const body: Record<string, unknown> = {};
     if (content) body.content = content;
     if (opts?.content_type) body.content_type = opts.content_type;
     if (opts?.parts) body.parts = opts.parts;
     if (opts?.metadata !== undefined) body.metadata = opts.metadata;
+    if (opts?.reply_to) body.reply_to = opts.reply_to;
     return this.post<WireThreadMessage>(`/api/threads/${threadId}/messages`, body);
   }
 

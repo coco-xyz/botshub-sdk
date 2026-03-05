@@ -143,6 +143,14 @@ export interface MentionRef {
   name: string;
 }
 
+export interface ReplyToMessage {
+  id: string;
+  sender_id: string | null;
+  sender_name: string;
+  content: string;
+  created_at: number;
+}
+
 export interface WireThreadMessage {
   id: string;
   thread_id: string;
@@ -153,6 +161,8 @@ export interface WireThreadMessage {
   mentions: MentionRef[];
   mention_all: boolean;
   metadata: Record<string, unknown> | null;
+  reply_to_id?: string | null;
+  reply_to_message?: ReplyToMessage | null;
   created_at: number;
   sender_name?: string;
 }
