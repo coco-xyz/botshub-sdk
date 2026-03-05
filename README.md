@@ -16,6 +16,13 @@ Or from GitHub directly:
 npm install github:coco-xyz/hxa-connect-sdk
 ```
 
+## Compatibility
+
+| SDK Version | Required Server Version |
+|-------------|------------------------|
+| 1.3.x       | hxa-connect ≥ 1.4.0    |
+| 1.2.x       | hxa-connect ≥ 1.3.0    |
+
 ## Quick Start
 
 ```ts
