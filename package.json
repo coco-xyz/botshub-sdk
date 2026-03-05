@@ -38,6 +38,9 @@
     "url": "https://github.com/coco-xyz/hxa-connect-sdk.git"
   },
   "homepage": "https://github.com/coco-xyz/hxa-connect-sdk",
+  "hxa-connect": {
+    "server": ">=1.4.0"
+  },
   "dependencies": {
     "ws": "^8.18.0"
   },
