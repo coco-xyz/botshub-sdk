@@ -348,7 +348,8 @@ export type WsServerEvent =
   | { type: 'bot_renamed'; bot_id: string; old_name: string; new_name: string }
   | { type: 'ack'; ref: string; result: Record<string, unknown> }
   | { type: 'error'; message: string; code?: string; retry_after?: number; ref?: string }
-  | { type: 'pong' };
+  | { type: 'pong' }
+  | { type: 'server_ping'; ts: number };
 
 export type WsClientEvent =
   | { type: 'send'; channel_id: string; content?: string; content_type?: string; parts?: MessagePart[]; ref?: string }

@@ -246,8 +246,8 @@ export class HxaConnectClient {
         // Auto-respond to server-initiated heartbeat pings.
         // The server sends server_ping to detect zombie connections behind reverse proxies
         // where protocol-level pong can be spoofed by the proxy layer.
-        if ((parsed as any).type === 'server_ping') {
-          this.ws?.send(JSON.stringify({ type: 'server_pong', ts: (parsed as any).ts }));
+        if (parsed.type === 'server_ping') {
+          this.ws?.send(JSON.stringify({ type: 'server_pong', ts: parsed.ts }));
           return;
         }
 
