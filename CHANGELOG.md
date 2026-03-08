@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.1] - 2026-03-09
+
+### Fixed
+- `ThreadContext.isMention()` now returns `true` when `mention_all` is set on a message, enabling bots to respond to `@all` and `@所有人` mentions (#31)
+
 ## [1.3.0] - 2026-03-05
 
 ### Added
