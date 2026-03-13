@@ -87,6 +87,18 @@ export class ApiError extends Error {
   }
 }
 
+/** Error thrown by downloadFile/downloadToPath for non-HTTP failures (size, input, etc.). */
+export class DownloadError extends Error {
+  constructor(
+    /** Machine-readable error code: FILE_TOO_LARGE, FILE_ID_EMPTY, URL_EMPTY, URL_INVALID */
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'DownloadError';
+  }
+}
+
 // ─── Client Options ──────────────────────────────────────────
 
 export interface ReconnectOptions {
@@ -819,32 +831,90 @@ export class HxaConnectClient {
 
   /**
    * Get the download URL for a file by its ID.
+   * The file ID is treated as opaque and URI-encoded.
    * Note: The URL requires authentication (Bearer token).
    */
   getFileUrl(fileId: string): string {
-    return `${this.baseUrl}/api/files/${fileId}`;
+    return `${this.baseUrl}/api/files/${encodeURIComponent(fileId)}`;
   }
 
   /**
    * Resolve a DownloadFileInput to the full download URL.
-   * Accepts { fileId } or { url } — the file ID is treated as opaque.
+   * Accepts { fileId } or { url } — the file ID is treated as opaque and URI-encoded.
    */
   private resolveFileUrl(input: DownloadFileInput): string {
     if ('fileId' in input) {
+      if (!input.fileId) throw new DownloadError('FILE_ID_EMPTY', 'fileId must not be empty');
       return `${this.baseUrl}/api/files/${encodeURIComponent(input.fileId)}`;
     }
+    if (!input.url) throw new DownloadError('URL_EMPTY', 'url must not be empty');
     // Hub-relative URL (e.g. "/api/files/abc-123") → absolute
     if (input.url.startsWith('/')) {
       return `${this.baseUrl}${input.url}`;
     }
+    // Absolute URL — validate scheme
+    if (!input.url.startsWith('http:') && !input.url.startsWith('https:')) {
+      throw new DownloadError('URL_INVALID', `Unsupported URL scheme: ${input.url.split(':')[0]}`);
+    }
     return input.url;
+  }
+
+  /**
+   * Combine a timeout AbortSignal with an optional external signal.
+   * Requires Node 20+ (AbortSignal.any is available).
+   */
+  private combineSignals(timeout: number, external?: AbortSignal): AbortSignal {
+    const timeoutSignal = AbortSignal.timeout(timeout);
+    if (!external) return timeoutSignal;
+    return AbortSignal.any([timeoutSignal, external]);
+  }
+
+  /**
+   * Read the response body using getReader() with a size guard.
+   * Uses getReader() instead of for-await for cross-browser compatibility
+   * (Safari does not support ReadableStream[Symbol.asyncIterator]).
+   */
+  private async readBodyWithLimit(
+    body: ReadableStream<Uint8Array>,
+    maxBytes: number,
+  ): Promise<{ chunks: Uint8Array[]; totalBytes: number }> {
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+        totalBytes += chunk.length;
+        if (totalBytes > maxBytes) {
+          throw new DownloadError(
+            'FILE_TOO_LARGE',
+            `File too large: exceeded limit of ${maxBytes} bytes during download`,
+          );
+        }
+        chunks.push(chunk);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return { chunks, totalBytes };
   }
 
   /**
    * Download a file from the Hub.
    * Accepts a file ID or Hub-relative URL (the ID is treated as opaque — no format constraints).
    * Streams the response body with a size guard to prevent OOM on large files.
-   * Throws ApiError on non-2xx responses.
+   *
+   * If the server provides a Content-Length header exceeding maxBytes, the download is
+   * rejected immediately without buffering. Otherwise, the body is streamed with a
+   * rolling size check.
+   *
+   * @throws {ApiError} on non-2xx HTTP responses
+   * @throws {DownloadError} on size exceeded, empty input, or invalid URL
    */
   async downloadFile(
     input: DownloadFileInput | string,
@@ -864,15 +934,9 @@ export class HxaConnectClient {
       headers['X-Org-Id'] = this.orgId;
     }
 
-    // Combine timeout and external signal
-    const signals: AbortSignal[] = [AbortSignal.timeout(timeout)];
-    if (opts?.signal) signals.push(opts.signal);
-    const combinedSignal = signals.length === 1 ? signals[0] : AbortSignal.any(signals);
+    const signal = this.combineSignals(timeout, opts?.signal);
 
-    const response = await fetch(url, {
-      headers,
-      signal: combinedSignal,
-    });
+    const response = await fetch(url, { headers, signal });
 
     if (!response.ok) {
       let body: unknown;
@@ -886,25 +950,24 @@ export class HxaConnectClient {
 
     // Early reject if Content-Length exceeds limit
     const clHeader = response.headers.get('content-length');
-    if (clHeader && parseInt(clHeader, 10) > maxBytes) {
+    const declaredSize = clHeader ? Number(clHeader) : NaN;
+    if (!Number.isNaN(declaredSize) && declaredSize > maxBytes) {
       await response.body?.cancel();
-      throw new Error(`File too large: ${parseInt(clHeader, 10)} bytes exceeds limit of ${maxBytes}`);
+      throw new DownloadError(
+        'FILE_TOO_LARGE',
+        `File too large: ${declaredSize} bytes exceeds limit of ${maxBytes}`,
+      );
     }
 
-    // Stream body with size guard
-    const chunks: Uint8Array[] = [];
-    let totalBytes = 0;
-    for await (const chunk of response.body!) {
-      totalBytes += chunk.length;
-      if (totalBytes > maxBytes) {
-        break; // for-await cleanup cancels the stream
-      }
-      chunks.push(chunk instanceof Uint8Array ? chunk : new Uint8Array(chunk));
+    // Handle null body (empty responses)
+    if (!response.body) {
+      const contentType = (response.headers.get('content-type') || 'application/octet-stream')
+        .split(';')[0].trim();
+      return { buffer: new Uint8Array(0), contentType, size: 0 };
     }
 
-    if (totalBytes > maxBytes) {
-      throw new Error(`File too large: exceeded limit of ${maxBytes} bytes during download`);
-    }
+    // Stream body with size guard (uses getReader for Safari compatibility)
+    const { chunks, totalBytes } = await this.readBodyWithLimit(response.body, maxBytes);
 
     // Merge chunks
     const buffer = new Uint8Array(totalBytes);
@@ -924,7 +987,8 @@ export class HxaConnectClient {
   /**
    * Download a file from the Hub and save it to a local path.
    * Convenience wrapper around downloadFile() + fs write.
-   * Node.js only — requires fs/promises.
+   * **Node.js only** — uses fs/promises and path modules.
+   * Not suitable for browser bundles; use downloadFile() for browser environments.
    */
   async downloadToPath(
     input: DownloadFileInput | string,
@@ -933,13 +997,15 @@ export class HxaConnectClient {
   ): Promise<DownloadFileResult & { path: string }> {
     const result = await this.downloadFile(input, opts);
 
-    // Dynamic import to keep SDK browser-compatible at type level
-    const { mkdir, writeFile } = await import('node:fs/promises');
-    const { dirname } = await import('node:path');
-    await mkdir(dirname(outputPath), { recursive: true });
-    await writeFile(outputPath, result.buffer);
+    // Dynamic import keeps browser builds from failing at build time.
+    // Node.js 20+ resolves 'fs' and 'path' natively.
+    const { promises: fsp } = await import('fs');
+    const { dirname, resolve } = await import('path');
+    await fsp.mkdir(dirname(outputPath), { recursive: true });
+    await fsp.writeFile(outputPath, result.buffer);
 
-    return { ...result, path: outputPath };
+    const resolvedPath = resolve(outputPath);
+    return { ...result, path: resolvedPath };
   }
 
   // ─── Catchup (Offline Event Replay) ──────────────────────
