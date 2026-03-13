@@ -489,6 +489,50 @@ describe('downloadFile', () => {
 
     await client.downloadFile('x');
   });
+
+  // ── Cross-origin auth safety ────────────────────────────────
+
+  it('does NOT send auth headers for cross-origin absolute URLs', async () => {
+    const crossOriginUrl = 'https://evil-cdn.example.com/files/abc';
+    globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const h = init?.headers as Record<string, string>;
+      assert.equal(h['Authorization'], undefined, 'Authorization must NOT be sent to cross-origin');
+      assert.equal(h['X-Org-Id'], undefined, 'X-Org-Id must NOT be sent to cross-origin');
+      return fakeResponse(PNG);
+    };
+
+    const client = new HxaConnectClient({ url: BASE_URL, token: TOKEN, orgId: 'org-xyz' });
+    const result = await client.downloadFile({ url: crossOriginUrl });
+    assert.equal(result.size, 4);
+  });
+
+  it('sends auth headers for same-origin absolute URLs', async () => {
+    const sameOriginUrl = `${BASE_URL}/api/files/same-origin-file`;
+    globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const h = init?.headers as Record<string, string>;
+      assert.equal(h['Authorization'], `Bearer ${TOKEN}`, 'Authorization must be sent to same-origin');
+      assert.equal(h['X-Org-Id'], 'org-xyz', 'X-Org-Id must be sent to same-origin');
+      return fakeResponse(PNG);
+    };
+
+    const client = new HxaConnectClient({ url: BASE_URL, token: TOKEN, orgId: 'org-xyz' });
+    const result = await client.downloadFile({ url: sameOriginUrl });
+    assert.equal(result.size, 4);
+  });
+
+  it('sends auth headers for cross-origin when includeAuth is explicitly true', async () => {
+    const crossOriginUrl = 'https://trusted-cdn.example.com/files/abc';
+    globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const h = init?.headers as Record<string, string>;
+      assert.equal(h['Authorization'], `Bearer ${TOKEN}`, 'Authorization must be sent when includeAuth=true');
+      assert.equal(h['X-Org-Id'], 'org-xyz');
+      return fakeResponse(PNG);
+    };
+
+    const client = new HxaConnectClient({ url: BASE_URL, token: TOKEN, orgId: 'org-xyz' });
+    const result = await client.downloadFile({ url: crossOriginUrl }, { includeAuth: true });
+    assert.equal(result.size, 4);
+  });
 });
 
 // ─── downloadToPath ────────────────────────────────────────────

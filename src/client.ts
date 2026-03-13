@@ -839,24 +839,41 @@ export class HxaConnectClient {
   }
 
   /**
-   * Resolve a DownloadFileInput to the full download URL.
+   * Extract the origin (scheme + host + port) from a URL string.
+   * Returns null if parsing fails.
+   */
+  private extractOrigin(url: string): string | null {
+    try {
+      const parsed = new URL(url);
+      return parsed.origin;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resolve a DownloadFileInput to the full download URL and whether it is same-origin.
    * Accepts { fileId } or { url } — the file ID is treated as opaque and URI-encoded.
    */
-  private resolveFileUrl(input: DownloadFileInput): string {
+  private resolveFileUrl(input: DownloadFileInput): { url: string; sameOrigin: boolean } {
     if ('fileId' in input) {
       if (!input.fileId) throw new DownloadError('FILE_ID_EMPTY', 'fileId must not be empty');
-      return `${this.baseUrl}/api/files/${encodeURIComponent(input.fileId)}`;
+      return { url: `${this.baseUrl}/api/files/${encodeURIComponent(input.fileId)}`, sameOrigin: true };
     }
     if (!input.url) throw new DownloadError('URL_EMPTY', 'url must not be empty');
     // Hub-relative URL (e.g. "/api/files/abc-123") → absolute
     if (input.url.startsWith('/')) {
-      return `${this.baseUrl}${input.url}`;
+      return { url: `${this.baseUrl}${input.url}`, sameOrigin: true };
     }
     // Absolute URL — validate scheme
     if (!input.url.startsWith('http:') && !input.url.startsWith('https:')) {
       throw new DownloadError('URL_INVALID', `Unsupported URL scheme: ${input.url.split(':')[0]}`);
     }
-    return input.url;
+    // Check same-origin
+    const targetOrigin = this.extractOrigin(input.url);
+    const hubOrigin = this.extractOrigin(this.baseUrl);
+    const sameOrigin = targetOrigin !== null && hubOrigin !== null && targetOrigin === hubOrigin;
+    return { url: input.url, sameOrigin };
   }
 
   /**
@@ -928,13 +945,18 @@ export class HxaConnectClient {
 
     // Accept plain string as fileId for convenience
     const resolved: DownloadFileInput = typeof input === 'string' ? { fileId: input } : input;
-    const url = this.resolveFileUrl(resolved);
+    const { url, sameOrigin } = this.resolveFileUrl(resolved);
 
-    const headers: Record<string, string> = {
-      'Authorization': `Bearer ${this.token}`,
-    };
-    if (this.orgId) {
-      headers['X-Org-Id'] = this.orgId;
+    // Determine whether to send auth headers.
+    // Default: only for same-origin URLs (prevents token leakage to third-party domains).
+    const sendAuth = opts?.includeAuth ?? sameOrigin;
+
+    const headers: Record<string, string> = {};
+    if (sendAuth) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+      if (this.orgId) {
+        headers['X-Org-Id'] = this.orgId;
+      }
     }
 
     const signal = this.combineSignals(timeout, opts?.signal);

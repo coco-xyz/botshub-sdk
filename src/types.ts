@@ -213,6 +213,15 @@ export interface DownloadFileOptions {
   timeout?: number;
   /** AbortSignal for external cancellation. */
   signal?: AbortSignal;
+  /**
+   * Whether to include auth headers (Authorization + X-Org-Id) in the request.
+   * - `true`: Always include auth headers (use only for trusted URLs).
+   * - `false`: Never include auth headers.
+   * - `undefined` (default): Include auth headers only for same-origin URLs
+   *   (matching the client's baseUrl origin). Cross-origin URLs will NOT
+   *   receive auth headers, preventing token leakage to third-party domains.
+   */
+  includeAuth?: boolean;
 }
 
 export interface DownloadFileResult {
