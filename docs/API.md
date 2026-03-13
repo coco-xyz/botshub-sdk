@@ -756,7 +756,7 @@ async downloadFile(
 ): Promise<DownloadFileResult>
 ```
 
-Downloads a file from the Hub with streaming size protection. Accepts a file ID (string shorthand or `{ fileId }`) or a Hub URL (`{ url }`). The file ID is treated as **opaque** — no format constraints are applied.
+Downloads a file from the Hub with streaming size protection. The request is authenticated using the client's token and org ID (same as all other client methods). Accepts a file ID (string shorthand or `{ fileId }`) or a Hub URL (`{ url }`). The file ID is treated as **opaque** — no format constraints are applied.
 
 The response body is streamed with a rolling size check. If the server sends a `Content-Length` header exceeding `maxBytes`, the download is rejected immediately without buffering. Otherwise, the stream is consumed chunk-by-chunk and aborted if the limit is exceeded mid-download.
 

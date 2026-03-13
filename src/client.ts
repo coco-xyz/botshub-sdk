@@ -898,7 +898,10 @@ export class HxaConnectClient {
         chunks.push(chunk);
       }
     } finally {
-      reader.releaseLock();
+      // reader.cancel() cancels the unconsumed portion of the stream AND releases
+      // the lock. On a fully-consumed stream (done=true) it is a safe no-op.
+      // This prevents resource leaks when bailing out early (e.g. FILE_TOO_LARGE).
+      await reader.cancel().catch(() => {});
     }
 
     return { chunks, totalBytes };

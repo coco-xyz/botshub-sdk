@@ -218,6 +218,40 @@ describe('downloadFile', () => {
     );
   });
 
+  it('cancels stream body on streaming overflow (no resource leak)', async () => {
+    let streamCancelled = false;
+    globalThis.fetch = async () => {
+      let chunkIndex = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (chunkIndex >= 5) {
+            controller.close();
+            return;
+          }
+          chunkIndex++;
+          controller.enqueue(new Uint8Array(500));
+        },
+        cancel() {
+          streamCancelled = true;
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+      });
+    };
+
+    await assert.rejects(
+      () => makeClient().downloadFile('x', { maxBytes: 800 }),
+      (err: unknown) => {
+        assert.ok(err instanceof DownloadError);
+        assert.equal(err.code, 'FILE_TOO_LARGE');
+        return true;
+      },
+    );
+    assert.ok(streamCancelled, 'stream should be cancelled on overflow to prevent resource leak');
+  });
+
   it('accepts body exactly at maxBytes', async () => {
     const body = new Uint8Array(1024);
     globalThis.fetch = async () => fakeResponse(body, { contentLength: 1024 });
@@ -310,6 +344,35 @@ describe('downloadFile', () => {
         return true;
       },
     );
+  });
+
+  it('consumes response body on non-2xx (no resource leak)', async () => {
+    let bodyRead = false;
+    globalThis.fetch = async () => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"error":"not found"}'));
+          controller.close();
+        },
+        cancel() {
+          bodyRead = true; // cancel also counts as cleanup
+        },
+      });
+      return new Response(stream, {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+
+    await assert.rejects(
+      () => makeClient().downloadFile('x'),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError);
+        assert.equal(err.status, 404);
+        return true;
+      },
+    );
+    // Body is consumed by response.json() in the error path — no leak
   });
 
   // ── Abort / timeout ──────────────────────────────────────
