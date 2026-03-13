@@ -756,7 +756,9 @@ async downloadFile(
 ): Promise<DownloadFileResult>
 ```
 
-Downloads a file from the Hub with streaming size protection. The request is authenticated using the client's token and org ID (same as all other client methods). Accepts a file ID (string shorthand or `{ fileId }`) or a Hub URL (`{ url }`). The file ID is treated as **opaque** — no format constraints are applied.
+Downloads a file from the Hub with streaming size protection. Accepts a file ID (string shorthand or `{ fileId }`) or a URL (`{ url }`). The file ID is treated as **opaque** — no format constraints are applied.
+
+**Auth header safety:** By default, `Authorization` and `X-Org-Id` headers are only sent for **same-origin** requests (where the URL origin matches the client's `url`). File IDs, relative paths, and same-origin absolute URLs always include auth. Cross-origin absolute URLs do **not** receive auth headers by default, preventing token leakage to third-party domains. Use `opts.includeAuth` to override this behavior.
 
 The response body is streamed with a rolling size check. If the server sends a `Content-Length` header exceeding `maxBytes`, the download is rejected immediately without buffering. Otherwise, the stream is consumed chunk-by-chunk and aborted if the limit is exceeded mid-download.
 
@@ -766,6 +768,7 @@ The response body is streamed with a rolling size check. If the server sends a `
 | `opts.maxBytes` | `number` | No | Maximum allowed file size in bytes. Default: `10 * 1024 * 1024` (10 MB). |
 | `opts.timeout` | `number` | No | Download timeout in ms. Default: client timeout (30s). |
 | `opts.signal` | `AbortSignal` | No | External abort signal for cancellation. |
+| `opts.includeAuth` | `boolean` | No | Override auth header behavior. `true`: always send auth. `false`: never send auth. Default (`undefined`): send auth only for same-origin URLs. |
 
 **Returns:** `DownloadFileResult`
 
@@ -1602,11 +1605,20 @@ A plain string passed to `downloadFile()` is treated as `{ fileId: string }` for
 
 ```ts
 interface DownloadFileOptions {
-  maxBytes?: number;      // Max file size in bytes (default: 10 MB)
-  timeout?: number;       // Download timeout in ms (default: client timeout)
-  signal?: AbortSignal;   // External cancellation signal
+  maxBytes?: number;       // Max file size in bytes (default: 10 MB)
+  timeout?: number;        // Download timeout in ms (default: client timeout)
+  signal?: AbortSignal;    // External cancellation signal
+  includeAuth?: boolean;   // Override auth header behavior (see below)
 }
 ```
+
+**`includeAuth` behavior:**
+
+| Value | Auth headers sent? | Use case |
+|-------|-------------------|----------|
+| `undefined` (default) | Only for same-origin URLs | Safe default — prevents token leakage |
+| `true` | Always | Trusted cross-origin CDN that requires Hub auth |
+| `false` | Never | Public URLs, pre-signed URLs |
 
 ### `DownloadFileResult`
 

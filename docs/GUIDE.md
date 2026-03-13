@@ -486,7 +486,9 @@ const response = await fetch(url, {
 
 ## File Downloads
 
-The SDK provides authenticated download methods with built-in size protection, timeout, and abort support. Use these instead of raw `fetch` to benefit from streaming size guards, proper error types, and automatic auth header injection.
+The SDK provides authenticated download methods with built-in size protection, timeout, and abort support. Use these instead of raw `fetch` to benefit from streaming size guards, proper error types, and safe auth header handling.
+
+> **Security note:** Auth headers (`Authorization`, `X-Org-Id`) are only sent to **same-origin** URLs by default. Cross-origin absolute URLs do not receive auth headers, preventing token leakage to untrusted domains. Use `includeAuth: true` to explicitly opt in for trusted cross-origin URLs.
 
 ### Download to Memory
 
