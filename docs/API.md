@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for the `hxa-connect-sdk` TypeScript SDK (v1.1.1).
+Complete reference for the `hxa-connect-sdk` TypeScript SDK (v1.4.0).
 
 ---
 
@@ -743,6 +743,101 @@ const url = client.getFileUrl('file_xyz');
 const res = await fetch(url, {
   headers: { Authorization: `Bearer ${token}` },
 });
+```
+
+---
+
+#### `downloadFile(input, opts?)`
+
+```ts
+async downloadFile(
+  input: DownloadFileInput | string,
+  opts?: DownloadFileOptions,
+): Promise<DownloadFileResult>
+```
+
+Downloads a file from the Hub with streaming size protection. Accepts a file ID (string shorthand or `{ fileId }`) or a Hub URL (`{ url }`). The file ID is treated as **opaque** — no format constraints are applied.
+
+The response body is streamed with a rolling size check. If the server sends a `Content-Length` header exceeding `maxBytes`, the download is rejected immediately without buffering. Otherwise, the stream is consumed chunk-by-chunk and aborted if the limit is exceeded mid-download.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `input` | `DownloadFileInput \| string` | Yes | File identifier. A plain string is treated as `{ fileId: string }`. |
+| `opts.maxBytes` | `number` | No | Maximum allowed file size in bytes. Default: `10 * 1024 * 1024` (10 MB). |
+| `opts.timeout` | `number` | No | Download timeout in ms. Default: client timeout (30s). |
+| `opts.signal` | `AbortSignal` | No | External abort signal for cancellation. |
+
+**Returns:** `DownloadFileResult`
+
+```ts
+interface DownloadFileResult {
+  buffer: Uint8Array;    // File content
+  contentType: string;   // MIME type (e.g. "image/png")
+  size: number;          // Total bytes
+}
+```
+
+**Throws:**
+- `ApiError` — non-2xx HTTP response (e.g. 404 file not found, 403 unauthorized)
+- `DownloadError` — input validation or size limit exceeded (codes: `FILE_TOO_LARGE`, `FILE_ID_EMPTY`, `URL_EMPTY`, `URL_INVALID`)
+- `AbortError` — timeout or external signal abort
+
+```ts
+import { DownloadError } from '@coco-xyz/hxa-connect-sdk';
+
+// By file ID (string shorthand)
+const result = await client.downloadFile('file_abc');
+console.log(`${result.contentType}, ${result.size} bytes`);
+
+// By file ID (object form)
+const result2 = await client.downloadFile({ fileId: 'file_abc' });
+
+// By Hub-relative URL (from message parts)
+const result3 = await client.downloadFile({ url: '/api/files/file_abc' });
+
+// With options
+const result4 = await client.downloadFile('file_abc', {
+  maxBytes: 5 * 1024 * 1024,  // 5 MB limit
+  timeout: 10_000,             // 10 seconds
+});
+
+// Handle errors
+try {
+  await client.downloadFile('big-file', { maxBytes: 1024 });
+} catch (err) {
+  if (err instanceof DownloadError && err.code === 'FILE_TOO_LARGE') {
+    console.log('File exceeds size limit');
+  }
+}
+```
+
+---
+
+#### `downloadToPath(input, outputPath, opts?)`
+
+```ts
+async downloadToPath(
+  input: DownloadFileInput | string,
+  outputPath: string,
+  opts?: DownloadFileOptions,
+): Promise<DownloadFileResult & { path: string }>
+```
+
+Downloads a file and saves it to a local path. Convenience wrapper around `downloadFile()` that writes the buffer to disk and creates parent directories as needed.
+
+**Node.js only** — uses `fs` and `path` modules. Not suitable for browser environments; use `downloadFile()` instead.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `input` | `DownloadFileInput \| string` | Yes | Same as `downloadFile()`. |
+| `outputPath` | `string` | Yes | Local file path to write to. Parent directories are created automatically. |
+| `opts` | `DownloadFileOptions` | No | Same as `downloadFile()`. |
+
+**Returns:** `DownloadFileResult & { path: string }` — includes the resolved absolute path.
+
+```ts
+const result = await client.downloadToPath('file_abc', '/tmp/downloads/image.png');
+console.log(`Saved to ${result.path} (${result.size} bytes)`);
 ```
 
 ---
@@ -1493,6 +1588,36 @@ interface FileRecord {
 }
 ```
 
+### `DownloadFileInput`
+
+Input for `downloadFile()` and `downloadToPath()` — either a file ID or a Hub URL. The file ID is opaque (no format constraints).
+
+```ts
+type DownloadFileInput = { fileId: string } | { url: string };
+```
+
+A plain string passed to `downloadFile()` is treated as `{ fileId: string }` for convenience.
+
+### `DownloadFileOptions`
+
+```ts
+interface DownloadFileOptions {
+  maxBytes?: number;      // Max file size in bytes (default: 10 MB)
+  timeout?: number;       // Download timeout in ms (default: client timeout)
+  signal?: AbortSignal;   // External cancellation signal
+}
+```
+
+### `DownloadFileResult`
+
+```ts
+interface DownloadFileResult {
+  buffer: Uint8Array;   // File content
+  contentType: string;  // MIME type from response headers
+  size: number;         // Total bytes downloaded
+}
+```
+
 ### `ScopedToken`
 
 ```ts
@@ -1623,6 +1748,37 @@ try {
   } else {
     // Network error, timeout, etc.
     console.log('Request failed:', err);
+  }
+}
+```
+
+### `DownloadError`
+
+Thrown by `downloadFile()` and `downloadToPath()` for non-HTTP failures (input validation, size limits).
+
+```ts
+import { DownloadError } from '@coco-xyz/hxa-connect-sdk';
+
+class DownloadError extends Error {
+  readonly code: string;  // Machine-readable error code
+}
+```
+
+| Code | When |
+|------|------|
+| `FILE_TOO_LARGE` | File exceeds `maxBytes` (detected via Content-Length header or during streaming). |
+| `FILE_ID_EMPTY` | Empty string passed as `fileId`. |
+| `URL_EMPTY` | Empty string passed as `url`. |
+| `URL_INVALID` | URL has an unsupported scheme (not `http:` or `https:`). |
+
+```ts
+try {
+  await client.downloadFile('big-file', { maxBytes: 1024 });
+} catch (err) {
+  if (err instanceof DownloadError) {
+    console.log(`Download failed: ${err.code} — ${err.message}`);
+  } else if (err instanceof ApiError) {
+    console.log(`Server error: ${err.status}`);
   }
 }
 ```
