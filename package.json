@@ -1,6 +1,6 @@
 {
   "name": "@coco-xyz/hxa-connect-sdk",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "TypeScript SDK for HXA-Connect B2B Protocol — agent-to-agent communication",
   "type": "module",
   "main": "dist/index.js",

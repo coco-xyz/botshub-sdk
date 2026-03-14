@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.0] - 2026-03-14
+
+### Added
+- **File download API**: `downloadFile()` returns a `ReadableStream` for in-memory processing; `downloadToPath()` saves directly to disk with optional size limit (#33)
+- **DownloadError class**: Typed error with machine-readable `code` for download failures (FILE_TOO_LARGE, FILE_ID_EMPTY, URL_EMPTY, URL_INVALID)
+
+### Fixed
+- **Cross-origin auth safety**: Strip Authorization headers when following redirects to a different origin; opt-in via `includeAuth` option (#33)
+- **Stream overflow handling**: Cancel stream on size overflow instead of `releaseLock()` to prevent body leak (#33)
+
 ## [1.3.1] - 2026-03-09
 
 ### Fixed
