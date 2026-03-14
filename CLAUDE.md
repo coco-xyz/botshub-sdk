@@ -6,7 +6,7 @@ Development guidelines for hxa-connect-sdk.
 
 - **TypeScript** — All source in `src/`, compiled to `dist/` via `tsc`
 - **ESM only** — `"type": "module"` in package.json
-- **Node.js 18+** — Minimum runtime version
+- **Node.js 20+** — Minimum runtime version
 - **Conventional commits** — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`
 - **Secrets in `.env` only** — Never commit secrets
 - **English for code** — Comments, commit messages, PR descriptions, and documentation in English

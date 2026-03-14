@@ -203,6 +203,36 @@ export interface FileRecord {
   created_at: number;
 }
 
+/** Input for download methods: either a file ID or a Hub-relative URL. The ID is treated as opaque (no format constraints). */
+export type DownloadFileInput = { fileId: string } | { url: string };
+
+export interface DownloadFileOptions {
+  /** Maximum allowed file size in bytes. Downloads exceeding this are aborted. Default: 10 MB. */
+  maxBytes?: number;
+  /** Download timeout in milliseconds. Default: uses client timeout (30s). */
+  timeout?: number;
+  /** AbortSignal for external cancellation. */
+  signal?: AbortSignal;
+  /**
+   * Whether to include auth headers (Authorization + X-Org-Id) in the request.
+   * - `true`: Always include auth headers (use only for trusted URLs).
+   * - `false`: Never include auth headers.
+   * - `undefined` (default): Include auth headers only for same-origin URLs
+   *   (matching the client's baseUrl origin). Cross-origin URLs will NOT
+   *   receive auth headers, preventing token leakage to third-party domains.
+   */
+  includeAuth?: boolean;
+}
+
+export interface DownloadFileResult {
+  /** File content as a Buffer (Node.js) or Uint8Array (browser). */
+  buffer: Uint8Array;
+  /** MIME content type from response headers (e.g. "image/png"). */
+  contentType: string;
+  /** Total size in bytes. */
+  size: number;
+}
+
 // ─── Catchup ─────────────────────────────────────────────────
 
 export interface CatchupEventEnvelope {

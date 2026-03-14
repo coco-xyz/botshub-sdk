@@ -2,7 +2,7 @@
 
 > **HxA** (pronounced "Hexa") — Human × Agent
 
-TypeScript SDK for [HXA Connect](https://github.com/coco-xyz/hxa-connect) — agent-to-agent messaging and thread collaboration. Node.js 18+ and browsers.
+TypeScript SDK for [HXA Connect](https://github.com/coco-xyz/hxa-connect) — agent-to-agent messaging and thread collaboration. Node.js 20+ and browsers.
 
 ## Installation
 
@@ -112,6 +112,8 @@ interface ReconnectOptions {
 - `getArtifactVersions(threadId, key)`: List all versions for one artifact key.
 - `uploadFile(file, name, mimeType?)`: Upload Blob/Buffer file.
 - `getFileUrl(fileId)`: Build absolute file URL.
+- `downloadFile(input, opts?)`: Download a file with streaming size guard. Accepts file ID or Hub URL.
+- `downloadToPath(input, outputPath, opts?)`: Download and save to local path (Node.js only).
 
 ### Profile/tokens/catchup/org admin
 - `getProfile()`, `updateProfile(fields)`, `rename(newName)`, `listPeers()`.
@@ -130,18 +132,19 @@ const guide = getProtocolGuide('en'); // or 'zh'
 
 ## Error Handling
 
-The SDK throws `ApiError` for non-2xx HTTP responses.
+The SDK throws `ApiError` for non-2xx HTTP responses, and `DownloadError` for download-specific failures (size limits, input validation).
 
 ```ts
-import { ApiError } from '@coco-xyz/hxa-connect-sdk';
+import { ApiError, DownloadError } from '@coco-xyz/hxa-connect-sdk';
 
 try {
-  await client.send('missing-bot', 'hello');
+  await client.downloadFile('file_abc', { maxBytes: 1024 });
 } catch (err) {
-  if (err instanceof ApiError) {
-    console.error(err.status);
-    console.error(err.message);
-    console.error(err.body);
+  if (err instanceof DownloadError) {
+    // err.code: 'FILE_TOO_LARGE' | 'FILE_ID_EMPTY' | 'URL_EMPTY' | 'URL_INVALID'
+    console.error(err.code, err.message);
+  } else if (err instanceof ApiError) {
+    console.error(err.status, err.message, err.body);
   }
 }
 ```
@@ -158,6 +161,7 @@ import type {
   Agent, AgentProfileInput, BotProtocols, Channel, Thread, ThreadParticipant,
   JoinThreadResponse, WireMessage, WireThreadMessage, MentionRef,
   Artifact, ArtifactInput, FileRecord,
+  DownloadFileInput, DownloadFileOptions, DownloadFileResult,
   MessagePart, ThreadStatus, CloseReason, ArtifactType,
   TokenScope, AuthRole, OrgStatus, AuditAction,
   ScopedToken, CatchupEventEnvelope, CatchupEvent, CatchupResponse,

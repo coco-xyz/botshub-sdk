@@ -7,6 +7,9 @@ import type {
   CatchupResponse,
   Channel,
   CloseReason,
+  DownloadFileInput,
+  DownloadFileOptions,
+  DownloadFileResult,
   FileRecord,
   JoinThreadResponse,
   LoginResponse,
@@ -81,6 +84,18 @@ export class ApiError extends Error {
       : `HTTP ${status}`;
     super(msg);
     this.name = 'ApiError';
+  }
+}
+
+/** Error thrown by downloadFile/downloadToPath for non-HTTP failures (size, input, etc.). */
+export class DownloadError extends Error {
+  constructor(
+    /** Machine-readable error code: FILE_TOO_LARGE, FILE_ID_EMPTY, URL_EMPTY, URL_INVALID */
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'DownloadError';
   }
 }
 
@@ -816,10 +831,206 @@ export class HxaConnectClient {
 
   /**
    * Get the download URL for a file by its ID.
+   * The file ID is treated as opaque and URI-encoded.
    * Note: The URL requires authentication (Bearer token).
    */
   getFileUrl(fileId: string): string {
-    return `${this.baseUrl}/api/files/${fileId}`;
+    return `${this.baseUrl}/api/files/${encodeURIComponent(fileId)}`;
+  }
+
+  /**
+   * Extract the origin (scheme + host + port) from a URL string.
+   * Returns null if parsing fails.
+   */
+  private extractOrigin(url: string): string | null {
+    try {
+      const parsed = new URL(url);
+      return parsed.origin;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Resolve a DownloadFileInput to the full download URL and whether it is same-origin.
+   * Accepts { fileId } or { url } — the file ID is treated as opaque and URI-encoded.
+   */
+  private resolveFileUrl(input: DownloadFileInput): { url: string; sameOrigin: boolean } {
+    if ('fileId' in input) {
+      if (!input.fileId) throw new DownloadError('FILE_ID_EMPTY', 'fileId must not be empty');
+      return { url: `${this.baseUrl}/api/files/${encodeURIComponent(input.fileId)}`, sameOrigin: true };
+    }
+    if (!input.url) throw new DownloadError('URL_EMPTY', 'url must not be empty');
+    // Hub-relative URL (e.g. "/api/files/abc-123") → absolute
+    if (input.url.startsWith('/')) {
+      return { url: `${this.baseUrl}${input.url}`, sameOrigin: true };
+    }
+    // Absolute URL — validate scheme
+    if (!input.url.startsWith('http:') && !input.url.startsWith('https:')) {
+      throw new DownloadError('URL_INVALID', `Unsupported URL scheme: ${input.url.split(':')[0]}`);
+    }
+    // Check same-origin
+    const targetOrigin = this.extractOrigin(input.url);
+    const hubOrigin = this.extractOrigin(this.baseUrl);
+    const sameOrigin = targetOrigin !== null && hubOrigin !== null && targetOrigin === hubOrigin;
+    return { url: input.url, sameOrigin };
+  }
+
+  /**
+   * Combine a timeout AbortSignal with an optional external signal.
+   * Requires Node 20+ (AbortSignal.any is available).
+   */
+  private combineSignals(timeout: number, external?: AbortSignal): AbortSignal {
+    const timeoutSignal = AbortSignal.timeout(timeout);
+    if (!external) return timeoutSignal;
+    return AbortSignal.any([timeoutSignal, external]);
+  }
+
+  /**
+   * Read the response body using getReader() with a size guard.
+   * Uses getReader() instead of for-await for cross-browser compatibility
+   * (Safari does not support ReadableStream[Symbol.asyncIterator]).
+   */
+  private async readBodyWithLimit(
+    body: ReadableStream<Uint8Array>,
+    maxBytes: number,
+  ): Promise<{ chunks: Uint8Array[]; totalBytes: number }> {
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+        totalBytes += chunk.length;
+        if (totalBytes > maxBytes) {
+          throw new DownloadError(
+            'FILE_TOO_LARGE',
+            `File too large: exceeded limit of ${maxBytes} bytes during download`,
+          );
+        }
+        chunks.push(chunk);
+      }
+    } finally {
+      // reader.cancel() cancels the unconsumed portion of the stream AND releases
+      // the lock. On a fully-consumed stream (done=true) it is a safe no-op.
+      // This prevents resource leaks when bailing out early (e.g. FILE_TOO_LARGE).
+      await reader.cancel().catch(() => {});
+    }
+
+    return { chunks, totalBytes };
+  }
+
+  /**
+   * Download a file from the Hub.
+   * Accepts a file ID or Hub-relative URL (the ID is treated as opaque — no format constraints).
+   * Streams the response body with a size guard to prevent OOM on large files.
+   *
+   * If the server provides a Content-Length header exceeding maxBytes, the download is
+   * rejected immediately without buffering. Otherwise, the body is streamed with a
+   * rolling size check.
+   *
+   * @throws {ApiError} on non-2xx HTTP responses
+   * @throws {DownloadError} on size exceeded, empty input, or invalid URL
+   */
+  async downloadFile(
+    input: DownloadFileInput | string,
+    opts?: DownloadFileOptions,
+  ): Promise<DownloadFileResult> {
+    const maxBytes = opts?.maxBytes ?? 10 * 1024 * 1024; // 10 MB default
+    const timeout = opts?.timeout ?? this.timeout;
+
+    // Accept plain string as fileId for convenience
+    const resolved: DownloadFileInput = typeof input === 'string' ? { fileId: input } : input;
+    const { url, sameOrigin } = this.resolveFileUrl(resolved);
+
+    // Determine whether to send auth headers.
+    // Default: only for same-origin URLs (prevents token leakage to third-party domains).
+    const sendAuth = opts?.includeAuth ?? sameOrigin;
+
+    const headers: Record<string, string> = {};
+    if (sendAuth) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+      if (this.orgId) {
+        headers['X-Org-Id'] = this.orgId;
+      }
+    }
+
+    const signal = this.combineSignals(timeout, opts?.signal);
+
+    const response = await fetch(url, { headers, signal });
+
+    if (!response.ok) {
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        body = await response.text().catch(() => null);
+      }
+      throw new ApiError(response.status, body);
+    }
+
+    // Early reject if Content-Length exceeds limit
+    const clHeader = response.headers.get('content-length');
+    const declaredSize = clHeader ? Number(clHeader) : NaN;
+    if (!Number.isNaN(declaredSize) && declaredSize > maxBytes) {
+      await response.body?.cancel();
+      throw new DownloadError(
+        'FILE_TOO_LARGE',
+        `File too large: ${declaredSize} bytes exceeds limit of ${maxBytes}`,
+      );
+    }
+
+    // Handle null body (empty responses)
+    if (!response.body) {
+      const contentType = (response.headers.get('content-type') || 'application/octet-stream')
+        .split(';')[0].trim();
+      return { buffer: new Uint8Array(0), contentType, size: 0 };
+    }
+
+    // Stream body with size guard (uses getReader for Safari compatibility)
+    const { chunks, totalBytes } = await this.readBodyWithLimit(response.body, maxBytes);
+
+    // Merge chunks
+    const buffer = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      buffer.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    const contentType = (response.headers.get('content-type') || 'application/octet-stream')
+      .split(';')[0]
+      .trim();
+
+    return { buffer, contentType, size: totalBytes };
+  }
+
+  /**
+   * Download a file from the Hub and save it to a local path.
+   * Convenience wrapper around downloadFile() + fs write.
+   * **Node.js only** — uses fs/promises and path modules.
+   * Not suitable for browser bundles; use downloadFile() for browser environments.
+   */
+  async downloadToPath(
+    input: DownloadFileInput | string,
+    outputPath: string,
+    opts?: DownloadFileOptions,
+  ): Promise<DownloadFileResult & { path: string }> {
+    const result = await this.downloadFile(input, opts);
+
+    // Dynamic import keeps browser builds from failing at build time.
+    // Node.js 20+ resolves 'fs' and 'path' natively.
+    const { promises: fsp } = await import('fs');
+    const { dirname, resolve } = await import('path');
+    await fsp.mkdir(dirname(outputPath), { recursive: true });
+    await fsp.writeFile(outputPath, result.buffer);
+
+    const resolvedPath = resolve(outputPath);
+    return { ...result, path: resolvedPath };
   }
 
   // ─── Catchup (Offline Event Replay) ──────────────────────

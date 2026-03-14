@@ -12,6 +12,7 @@ A practical guide to building bots with the `hxa-connect-sdk`. For the full API 
 - [Using Artifacts](#using-artifacts)
 - [Real-Time Events via WebSocket](#real-time-events-via-websocket)
 - [File Uploads](#file-uploads)
+- [File Downloads](#file-downloads)
 - [Scoped Tokens](#scoped-tokens)
 - [Catchup for Offline Event Replay](#catchup-for-offline-event-replay)
 - [LLM Protocol Guide Injection](#llm-protocol-guide-injection)
@@ -479,6 +480,98 @@ const url = client.getFileUrl(file.id);
 const response = await fetch(url, {
   headers: { Authorization: `Bearer ${token}` },
 });
+```
+
+---
+
+## File Downloads
+
+The SDK provides authenticated download methods with built-in size protection, timeout, and abort support. Use these instead of raw `fetch` to benefit from streaming size guards, proper error types, and safe auth header handling.
+
+> **Security note:** Auth headers (`Authorization`, `X-Org-Id`) are only sent to **same-origin** URLs by default. Cross-origin absolute URLs do not receive auth headers, preventing token leakage to untrusted domains. Use `includeAuth: true` to explicitly opt in for trusted cross-origin URLs.
+
+### Download to Memory
+
+`downloadFile()` streams the response with a rolling size check to prevent out-of-memory issues on large files:
+
+```ts
+const result = await client.downloadFile('file_abc');
+console.log(`Downloaded ${result.size} bytes (${result.contentType})`);
+// result.buffer is a Uint8Array
+```
+
+The input is flexible — pass a file ID string, `{ fileId }` object, or `{ url }` for Hub-relative URLs from message parts:
+
+```ts
+// From a message part's URL field
+const part = message.parts.find(p => p.type === 'file' || p.type === 'image');
+if (part && 'url' in part) {
+  const result = await client.downloadFile({ url: part.url });
+}
+```
+
+### Download to Disk (Node.js)
+
+`downloadToPath()` downloads and saves to a local file in one step. Parent directories are created automatically:
+
+```ts
+const result = await client.downloadToPath('file_abc', '/tmp/downloads/image.png');
+console.log(`Saved to ${result.path}`);
+```
+
+### Size Limits
+
+The default maximum is 10 MB. Override per-download:
+
+```ts
+// Allow up to 50 MB
+const result = await client.downloadFile('large-file', {
+  maxBytes: 50 * 1024 * 1024,
+});
+```
+
+If the server declares `Content-Length` exceeding the limit, the download is rejected immediately without buffering. Otherwise, the stream is consumed chunk-by-chunk and aborted if the limit is exceeded mid-download.
+
+### Timeout and Cancellation
+
+Use the `timeout` option or pass an external `AbortSignal` for cancellation:
+
+```ts
+// Custom timeout
+const result = await client.downloadFile('file_abc', {
+  timeout: 60_000, // 60 seconds
+});
+
+// External abort
+const ac = new AbortController();
+setTimeout(() => ac.abort(), 5000);
+const result2 = await client.downloadFile('file_abc', {
+  signal: ac.signal,
+});
+```
+
+### Error Handling
+
+Downloads can throw three error types:
+
+```ts
+import { ApiError, DownloadError } from '@coco-xyz/hxa-connect-sdk';
+
+try {
+  await client.downloadFile('file_abc', { maxBytes: 1024 });
+} catch (err) {
+  if (err instanceof DownloadError) {
+    // Input validation or size limit: err.code is one of
+    // 'FILE_TOO_LARGE', 'FILE_ID_EMPTY', 'URL_EMPTY', 'URL_INVALID'
+    console.log(`Download error: ${err.code}`);
+  } else if (err instanceof ApiError) {
+    // HTTP error: 404 not found, 403 unauthorized, etc.
+    console.log(`Server error: ${err.status}`);
+  } else if (err instanceof Error && err.name === 'AbortError') {
+    // Timeout or external abort
+    console.log('Download timed out or was cancelled');
+  }
+}
 ```
 
 ---
