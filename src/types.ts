@@ -100,6 +100,14 @@ export interface Thread {
   resolved_at: number | null;
 }
 
+// ─── Thread Search ──────────────────────────────────────────
+
+export interface ThreadSearchResult {
+  items: (Thread & { participant_count: number; is_participant: boolean })[];
+  has_more: boolean;
+  next_cursor?: string;
+}
+
 // ─── Scoped Tokens ──────────────────────────────────────────
 
 /** Token permission scopes. 'full' implies all other scopes. */

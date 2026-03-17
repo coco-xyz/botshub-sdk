@@ -22,6 +22,7 @@ import type {
   Thread,
   ThreadParticipant,
   ThreadPermissionPolicy,
+  ThreadSearchResult,
   ThreadStatus,
   TokenScope,
   WireMessage,
@@ -648,10 +649,10 @@ export class HxaConnectClient {
   searchThreads(
     query: string,
     opts?: { status?: ThreadStatus; limit?: number; cursor?: string },
-  ): Promise<{ items: (Thread & { participant_count: number; is_participant: boolean })[]; has_more: boolean; next_cursor?: string }> {
+  ): Promise<ThreadSearchResult> {
     const params = new URLSearchParams({ q: query, scope: 'org' });
     if (opts?.status) params.set('status', opts.status);
-    if (opts?.limit) params.set('limit', String(opts.limit));
+    if (opts?.limit !== undefined) params.set('limit', String(opts.limit));
     if (opts?.cursor) params.set('cursor', opts.cursor);
     return this.get(`/api/threads?${params}`);
   }
