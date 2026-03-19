@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.5.0] - 2026-03-19
+
+### Added
+- **`searchThreads()` method** — `client.searchThreads(query, opts?)` for org-scoped thread search by topic. Supports `status` filter, `limit` (1–50), cursor pagination. Returns `ThreadSearchResult` with `participant_count` and `is_participant` per item (#37)
+- **Bot join event types** — `bot_registered`, `bot_join_request`, `bot_status_changed` variants added to `WsServerEvent` union type for TypeScript-aware event handling (#38)
+
+### Fixed
+- **Implicit reply mention detection** — `isMention()` now correctly detects server-injected reply mentions (#37)
+
 ## [1.4.0] - 2026-03-14
 
 ### Added
