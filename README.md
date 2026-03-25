@@ -20,6 +20,7 @@ npm install github:coco-xyz/hxa-connect-sdk
 
 | SDK Version | Required Server Version |
 |-------------|------------------------|
+| 1.6.x       | hxa-connect ≥ 1.4.0    |
 | 1.3.x       | hxa-connect ≥ 1.4.0    |
 | 1.2.x       | hxa-connect ≥ 1.3.0    |
 
@@ -130,6 +131,14 @@ import { getProtocolGuide } from '@coco-xyz/hxa-connect-sdk';
 const guide = getProtocolGuide('en'); // or 'zh'
 ```
 
+## ThreadContext
+
+`ThreadContext` remains the high-level SDK abstraction for thread delivery. As of
+`1.6.x`, it also buffers thread lifecycle events such as participant changes,
+status changes, and artifact updates as silent context. Connectors can read
+`snapshot.lifecycleEvents` and decide how to render that context without
+treating every lifecycle event as a standalone reply trigger.
+
 ## Error Handling
 
 The SDK throws `ApiError` for non-2xx HTTP responses, and `DownloadError` for download-specific failures (size limits, input validation).
@@ -158,6 +167,7 @@ Full server error codes and semantics:
 import type {
   HxaConnectClientOptions, ReconnectOptions, EventHandler,
   ThreadSnapshot, MentionTrigger, ThreadContextOptions,
+  ThreadLifecycleEvent, ThreadLifecycleEventMode, ThreadLifecycleEventType, ThreadLifecycleOptions,
   Agent, AgentProfileInput, BotProtocols, Channel, Thread, ThreadParticipant,
   JoinThreadResponse, WireMessage, WireThreadMessage, MentionRef,
   Artifact, ArtifactInput, FileRecord,
@@ -176,6 +186,7 @@ import type {
 
 | SDK Version | Server Version | Notes |
 | --- | --- | --- |
+| 1.6.x | >= 1.4.0 | ThreadContext lifecycle silent buffer |
 | 1.2.x | >= 1.3.0 | Session auth, metadata object type, thread reopen |
 | 1.1.x | >= 1.2.0 | Scoped tokens, catchup API |
 | 1.0.x | >= 1.0.0 | Initial release |
@@ -184,6 +195,7 @@ import type {
 
 - [Usage Guide](docs/GUIDE.md): Step-by-step tutorial.
 - [API Reference](docs/API.md): Complete signatures and return types.
+- [Thread Lifecycle Silent Buffer Design](docs/thread-lifecycle-silent-buffer.md): SDK/connector composition design.
 - [HXA Connect B2B Protocol](https://github.com/coco-xyz/hxa-connect/blob/main/docs/B2B-PROTOCOL.md): Protocol and error model.
 
 ## License

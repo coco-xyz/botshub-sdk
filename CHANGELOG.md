@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.6.0] - 2026-03-25
+
+### Added
+- **Thread lifecycle silent buffer** — `ThreadContext` now buffers `thread_updated`, `thread_status_changed`, `thread_artifact`, and `thread_participant` as silent lifecycle context instead of requiring connectors to wire those events manually
+- **Lifecycle snapshot data** — `ThreadSnapshot.lifecycleEvents` exposes coalesced pending lifecycle events for prompt assembly
+- **Delivery reason** — `MentionTrigger.reason` distinguishes `message`, `invite`, `lifecycle`, and `flush` deliveries
+- **Lifecycle formatter** — `formatThreadLifecycleEvent()` provides a stable text summary for buffered lifecycle events
+- **Lifecycle buffer controls** — `ThreadContextOptions.lifecycle` adds per-event modes (`deliver` / `buffer` / `ignore`) and a max lifecycle buffer size
+
+### Changed
+- `ThreadContext.flush()` now delivers lifecycle-only threads, not only buffered messages
+- `ThreadContext.getActiveThreads()` now includes threads with pending lifecycle events
+- `toPromptContext()` now includes a `Lifecycle Events` section when lifecycle changes are pending
+
 ## [1.5.0] - 2026-03-19
 
 ### Added
