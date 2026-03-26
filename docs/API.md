@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for the `hxa-connect-sdk` TypeScript SDK (v1.4.0).
+Complete reference for the `hxa-connect-sdk` TypeScript SDK (v1.6.0).
 
 ---
 
