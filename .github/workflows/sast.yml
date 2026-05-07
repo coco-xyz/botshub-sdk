@@ -16,8 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run Semgrep
-        run: semgrep scan --config auto --severity ERROR
-        continue-on-error: true
+        run: semgrep scan --config auto --error --severity ERROR
 
   gitleaks:
     name: Gitleaks Secret Scan
@@ -32,4 +31,3 @@ jobs:
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" | tar xz -C /usr/local/bin gitleaks
       - name: Run Gitleaks
         run: gitleaks detect --source . --verbose
-        continue-on-error: true
